@@ -10,7 +10,7 @@ from . import __version__
 from . import config, naming
 from .api import Client
 from .errors import (CliError, EXIT_AUTH, EXIT_INPUT, EXIT_OK, EXIT_UNAVAILABLE,
-                     exit_code_for)
+                     PROTECTED_AUDIO, PROTECTED_AUDIO_MESSAGE, exit_code_for)
 
 DEFAULT_TIMEOUT = 600
 # 先 3 秒，逐步放宽到 15 秒
@@ -164,6 +164,9 @@ def cmd_extract(ctx, args):
         raise CliError(EXIT_INPUT, "IMAGE_NOT_SUPPORTED", "这是图集，命令行暂不支持图集下载。")
     kind = "audio" if args.audio else "video"
     quality = args.quality or "source"
+    capability = (parsed.get("capabilities") or {}).get(kind) or {}
+    if capability.get("supported") is False and capability.get("reasonCode") == PROTECTED_AUDIO:
+        raise CliError(EXIT_INPUT, PROTECTED_AUDIO, PROTECTED_AUDIO_MESSAGE)  # 不创建注定失败的任务
     ctx.progress("已识别：%s" % parsed.get("title", ""))
     job = client.create_job(parsed.get("sourceUrl") or args.url, kind, quality, parsed.get("contentId", ""))
     if args.no_wait:

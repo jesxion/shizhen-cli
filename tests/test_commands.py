@@ -101,6 +101,33 @@ class ExtractTests(CliTestCase):
         code, data = self.run_json("extract", "u")
         self.assertEqual((code, data["code"]), (2, "IMAGE_NOT_SUPPORTED"))
 
+    def test_protected_audio_is_refused_without_creating_a_job(self):
+        parsed = dict(PARSED, platform="suno", capabilities={
+            "video": {"supported": False}, "audio": {"supported": False, "reasonCode": "AUTHORIZED_EXPORT_REQUIRED"}})
+        self.server.on("POST", "/api/parse", body=parsed)
+        code, data = self.run_json("extract", "u", "--audio")
+        self.assertEqual((code, data["code"]), (2, "AUTHORIZED_EXPORT_REQUIRED"))
+        self.assertIn("小程序", data["message"])
+        self.assertEqual(self.server.count("POST", "/api/media-jobs"), 0)
+
+    def test_server_side_protected_audio_conflict_gets_the_same_hint(self):
+        self.server.on("POST", "/api/parse", body=PARSED)  # an older parse result without capabilities
+        self.server.on("POST", "/api/media-jobs", status=409, body={"detail": {
+            "code": "AUTHORIZED_EXPORT_REQUIRED", "message": "该音频需要平台授权的导出地址。", "retryable": True}})
+        code, data = self.run_json("extract", "u", "--audio")
+        self.assertEqual((code, data["code"], data["retryable"]), (2, "AUTHORIZED_EXPORT_REQUIRED", False))
+        self.assertIn("小程序", data["message"])
+
+    def test_unsupported_without_a_reason_code_is_left_to_the_server(self):
+        parsed = dict(PARSED, capabilities={"video": {"supported": False}})
+        self.server.on("POST", "/api/parse", body=parsed)
+        self.server.on("POST", "/api/media-jobs", body=job("queued"))
+        self.server.on("GET", "/api/media-jobs/j1", body=job("failed", error={
+            "code": "NO_VIDEO", "message": "x", "retryable": False}))
+        code, _ = self.run_json("extract", "u", "--no-wait")
+        self.assertEqual(code, 0)
+        self.assertEqual(self.server.count("POST", "/api/media-jobs"), 1)
+
     def test_job_failed_not_retryable_is_exit_2(self):
         self.server.on("POST", "/api/media-jobs", status=202, body=job("queued"))
         self.server.on("GET", "/api/media-jobs/j1", body=job(

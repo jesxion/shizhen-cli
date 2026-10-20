@@ -12,6 +12,11 @@ UNAVAILABLE_CODES = {"TOKEN_QUOTA_UNAVAILABLE", "MODERATION_UNAVAILABLE", "STORA
                      "NETWORK_ERROR", "WAIT_TIMEOUT"}
 
 
+# 服务端的 AUTHORIZED_EXPORT_REQUIRED：受保护的音频（如 Suno）没有下载任务，只能在小程序里打开或转发。
+PROTECTED_AUDIO = "AUTHORIZED_EXPORT_REQUIRED"
+PROTECTED_AUDIO_MESSAGE = "这条音频受平台保护，命令行不能提取；请在拾帧小程序里打开或转发。"
+
+
 class CliError(Exception):
     def __init__(self, exit_code, code, message, retryable=False, reset_at=None, extra=None):
         super().__init__(message)
@@ -54,6 +59,8 @@ def from_response(status, body):
         message = str(detail) if detail else "请求失败（HTTP %d）" % status
         retryable = status >= 500
         reset_at = None
+    if code == PROTECTED_AUDIO:
+        message, retryable = PROTECTED_AUDIO_MESSAGE, False
     if status == 426 and code.startswith("HTTP_"):
         code = "CLI_TOO_OLD"
     if status == 401 and code.startswith("HTTP_"):
